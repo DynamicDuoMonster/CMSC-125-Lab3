@@ -3,6 +3,7 @@
 
 #include <pthread.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 
 #define MAX_TRANSACTIONS 256
 #define MAX_OPS_PER_TX   256
@@ -46,7 +47,7 @@ typedef struct {
 
 extern Transaction transactions[MAX_TRANSACTIONS];
 extern int num_transactions;
-extern volatile bool all_transactions_done;
+extern _Atomic bool all_transactions_done;
 
 bool load_transactions(const char *filename);
 void *execute_transaction(void *arg);

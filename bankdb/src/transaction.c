@@ -9,7 +9,7 @@
 
 Transaction transactions[MAX_TRANSACTIONS];
 int         num_transactions       = 0;
-volatile bool all_transactions_done = false;
+_Atomic bool    all_transactions_done = false;
 
 extern int verbose;
 
@@ -235,7 +235,7 @@ void run_all_transactions(void)
         pthread_join(transactions[i].thread, NULL);
     }
 
-    all_transactions_done = true;
+    atomic_store(&all_transactions_done, true);
 }
 
 /* -------------------------------------------------------

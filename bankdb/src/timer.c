@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <unistd.h>
+#include <stdatomic.h>
 #include "timer.h"
 #include "transaction.h"
 
@@ -8,7 +9,7 @@ pthread_mutex_t tick_lock       = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  tick_changed    = PTHREAD_COND_INITIALIZER;
 int             tick_interval_ms = 100;
 
-static volatile int timer_running = 0;
+static _Atomic int timer_running = 0;
 
 void timer_init(int interval_ms)
 {
@@ -21,7 +22,7 @@ void timer_init(int interval_ms)
 void *timer_thread(void *arg)
 {
     (void)arg;
-    while (timer_running && !all_transactions_done) {
+    while (atomic_load(&timer_running) && !atomic_load(&all_transactions_done)) {
         usleep((unsigned int)tick_interval_ms * 1000);
 
         pthread_mutex_lock(&tick_lock);
@@ -43,7 +44,7 @@ void wait_until_tick(int target_tick)
 
 void timer_stop(void)
 {
-    timer_running = 0;
+    atomic_store(&timer_running, 0);
     /* Wake anyone still sleeping on tick_changed */
     pthread_mutex_lock(&tick_lock);
     pthread_cond_broadcast(&tick_changed);
