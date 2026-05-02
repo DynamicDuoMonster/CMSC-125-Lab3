@@ -25,6 +25,7 @@ void metrics_check_conservation(int initial_total)
     int final_total = bank_total_balance();
     int committed_deposits  = 0;
     int committed_withdraws = 0;
+    int net_external_transfers = 0;
 
     for (int i = 0; i < num_transactions; i++) {
         Transaction *tx = &transactions[i];
@@ -34,6 +35,9 @@ void metrics_check_conservation(int initial_total)
                 committed_deposits  += tx->ops[j].amount_centavos;
             else if (tx->ops[j].type == OP_WITHDRAW)
                 committed_withdraws += tx->ops[j].amount_centavos;
+            else if (tx->ops[j].type == OP_TRANSFER) {
+                // Transfers preserve total within bank; no net effect
+            }
         }
     }
 
@@ -47,4 +51,9 @@ void metrics_check_conservation(int initial_total)
            expected / 100, expected % 100);
     printf("Conservation check : %s\n",
            (final_total == expected) ? "PASSED" : "FAILED");
+    
+    // Additional wallet-level check
+    printf("\nNote: Conservation check validates bank ledger consistency.\n");
+    printf("Full system-level conservation requires per-user wallet tracking\n");
+    printf("not implemented in this version (DEPOSIT source/WITHDRAW destination unknown).\n");
 }
