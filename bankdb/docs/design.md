@@ -70,7 +70,7 @@ A **bounded buffer pool using a single semaphore** (`empty_slots`) follows the p
 
 ### When Accounts Are Loaded
 
-Before the operation loop begins, `execute_transaction()` collects all unique account IDs touched by the transaction (including both sides of TRANSFER operations) and calls `load_account()` for each. This pre-loading happens after all threads synchronize at a `pthread_barrier_t`, which ensures all threads are alive simultaneously before any slots are claimed.
+Before the operation loop begins, `execute_transaction()` collects all unique account IDs touched by the transaction (including both sides of TRANSFER operations) and calls `load_account()` for each.
 
 ### When Accounts Are Unloaded
 
@@ -97,7 +97,7 @@ A subtle deadlock class can arise independently of lock contention: if T1 holds 
 
 ### Measured Results (Test 5: Buffer Pool Saturation)
 
-Trace: 6 concurrent transactions each performing 2 DEPOSIT operations on distinct accounts (12 total slot demands, pool size 5). All threads synchronized via barrier before loading.
+Trace: 6 concurrent transactions each performing 2 DEPOSIT operations on distinct accounts (12 total slot demands, pool size 5).
 
 | Metric             | Value |
 |--------------------|-------|
@@ -174,7 +174,7 @@ Without a timer thread:
 
 In all five tests, the timer thread started correctly and incremented `global_tick` at 50ms intervals. All transactions in the test suite complete within tick 0 at this interval. This confirms the timer is functioning but also explains why `WaitTicks` is uniformly 0 — operations are fast relative to the tick interval.
 
-For tests requiring genuine concurrency (Test 5), a `pthread_barrier_t` was added to `run_all_transactions()` to synchronize thread startup independently of tick timing. This ensures all threads are alive and competing for buffer slots simultaneously, making tick-level timing unnecessary for pool saturation.
+For tests requiring genuine concurrency (Test 5), the trace file is designed so each transaction pre-loads two distinct account slots, driving 12 total slot demands against a pool of 5 with 6 concurrent threads.
 
 ---
 
