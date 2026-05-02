@@ -78,7 +78,6 @@ make debug
 **Run:**
 ```bash
 ./bankdb --accounts=<accounts_file> --trace=<trace_file> \
-         [--deadlock=prevention|detection] \
          [--tick-ms=N] \
          [--verbose]
 ```
@@ -87,7 +86,6 @@ make debug
 |--------|-------------|---------|
 | `--accounts=FILE` | Initial account balances file | required |
 | `--trace=FILE` | Transaction workload trace file | required |
-| `--deadlock=prevention\|detection` | Deadlock handling strategy | `prevention` |
 | `--tick-ms=N` | Milliseconds per simulation tick | `100` |
 | `--verbose` | Print detailed per-operation logs | off |
 
@@ -152,11 +150,10 @@ Amounts are in **centavos** (100 centavos = PHP 1.00).
 make test       # Run all 5 provided test cases
 make test1      # Test 1: No conflicts
 make test2      # Test 2: Concurrent readers
-make test3a     # Test 3: Deadlock prevention
-make test3b     # Test 3: Deadlock detection
+make test3      # Test 3: Deadlock prevention
 make test4      # Test 4: Insufficient funds (abort)
 make test5      # Test 5: Buffer pool saturation
-make tsan       # ThreadSanitizer runs
+make tsan       # ThreadSanitizer runs (must pass clean)
 ```
 
 ---
@@ -165,7 +162,7 @@ make tsan       # ThreadSanitizer runs
 
 See [`docs/design.md`](docs/design.md) for full rationale. Key choices:
 
-**Deadlock handling:** Both strategies are implemented and selectable via `--deadlock=`. Prevention uses lock ordering (always acquire the lower `account_id` lock first, breaking the circular wait Coffman condition). Detection maintains a wait-for graph and runs DFS cycle detection on every lock block; resolution aborts the youngest waiting transaction to minimize wasted work.
+**Deadlock handling:** Prevention only, implemented via lock ordering (always acquire the lower `account_id` lock first, breaking the circular wait Coffman condition). Detection was prototyped but removed; the wait-for graph approach requires blocking lock acquisition with explicit wait recording to form a real cycle, and at 50ms tick resolution transfers completed before any circular wait could form.
 
 **Buffer pool:** Bounded pool using a single `sem_t` (`empty_slots`) and a `pthread_mutex_t` for the critical section. Each transaction pre-loads all required accounts before acquiring any locks, then unloads all on commit or abort. 
 
@@ -181,4 +178,4 @@ See [`docs/design.md`](docs/design.md) for full rationale. Key choices:
 |------|--------|
 | Week 1 | Design documentation, initial repository structure and commits |
 | Week 2 | Full implementation: CLI parsing, timer, bank operations, buffer pool, lock manager (prevention + detection), transaction execution, metrics, Makefile |
-| Week 3 | Correctness fixes: tx_id routing, buffer pool pre-loading, semaphore redesign. Trace file updates for deadlock and saturation tests. Compiler warning fix. design.md updated with actual measured results and known limitations. |
+| Week 3 | Correctness fixes: tx_id routing, buffer pool pre-loading, semaphore redesign. Trace file updates for deadlock and saturation tests. Compiler warning fix. Removed deadlock detection code (wait-for graph, DFS, `transfer_detection`, `test3b`). Fixed two ThreadSanitizer data races: `all_transactions_done` and `timer_running` changed from `volatile` to `_Atomic` with `atomic_store`/`atomic_load`; `tsan` target now exits clean. design.md updated with actual measured results and known limitations. |
