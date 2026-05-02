@@ -52,8 +52,4 @@ void metrics_check_conservation(int initial_total)
     printf("Conservation check : %s\n",
            (final_total == expected) ? "PASSED" : "FAILED");
     
-    // Additional wallet-level check
-    printf("\nNote: Conservation check validates bank ledger consistency.\n");
-    printf("Full system-level conservation requires per-user wallet tracking\n");
-    printf("not implemented in this version (DEPOSIT source/WITHDRAW destination unknown).\n");
 }
