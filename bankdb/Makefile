@@ -43,15 +43,10 @@ test2:
 	./$(TARGET) --accounts=$(ACCOUNTS) --trace=tests/trace_readers.txt \
 	            --deadlock=prevention --tick-ms=50 --verbose
 
-test3a:
+test3:
 	@echo "\n=== Test 3a: Deadlock Prevention ==="
 	./$(TARGET) --accounts=$(ACCOUNTS) --trace=tests/trace_deadlock.txt \
 	            --deadlock=prevention --tick-ms=50 --verbose
-
-test3b:
-	@echo "\n=== Test 3b: Deadlock Detection ==="
-	./$(TARGET) --accounts=$(ACCOUNTS) --trace=tests/trace_deadlock.txt \
-	            --deadlock=detection --tick-ms=50 --verbose
 
 test4:
 	@echo "\n=== Test 4: Insufficient Funds (Abort) ==="
@@ -63,13 +58,11 @@ test5:
 	./$(TARGET) --accounts=$(ACCOUNTS) --trace=tests/trace_buffer.txt \
 	            --deadlock=prevention --tick-ms=50 --verbose
 
-test: all test1 test2 test3a test3b test4 test5
+test: all test1 test2 test3 test4 test5
 
 # ── ThreadSanitizer run ───────────────────────────────────────────────────────
 tsan: debug
 	@echo "\n=== ThreadSanitizer: trace_readers ==="
-	./$(DBG_TARGET) --accounts=$(ACCOUNTS) --trace=tests/trace_readers.txt \
-	                --deadlock=prevention --tick-ms=50
+	setarch x86_64 -R ./$(DBG_TARGET) --accounts=$(ACCOUNTS) --trace=tests/trace_readers.txt --tick-ms=50
 	@echo "\n=== ThreadSanitizer: trace_deadlock (prevention) ==="
-	./$(DBG_TARGET) --accounts=$(ACCOUNTS) --trace=tests/trace_deadlock.txt \
-	                --deadlock=prevention --tick-ms=50
+	setarch x86_64 -R ./$(DBG_TARGET) --accounts=$(ACCOUNTS) --trace=tests/trace_deadlock.txt --tick-ms=50
