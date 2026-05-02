@@ -60,6 +60,12 @@ bool bank_load_accounts(const char *filename)
 
 int get_balance(int account_id)
 {
+    /*
+     * Buffer pool: the account slot is pre-loaded by execute_transaction()
+     * before the operation loop begins, so load_account/unload_account are
+     * not called here.  All buffer pool accounting for BALANCE operations is
+     * captured by the pre-load / post-unload in execute_transaction().
+     */
     int idx = find_account_idx(account_id);
     if (idx < 0) { fprintf(stderr, "get_balance: unknown account %d\n", account_id); return -1; }
     Account *acc = &bank.accounts[idx];
