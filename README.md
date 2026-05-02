@@ -133,14 +133,17 @@ Amounts are in **centavos** (100 centavos = PHP 1.00).
 
 ### Week 3
 
-- Fixed `tx_id` routing: added `tx_id` parameter to `transfer()` in `bank.c` and propagated it from `execute_transaction()` through to `transfer_detection()` in `lock_mgr.c`, replacing the previous hard-coded `-1`
-- Fixed buffer pool pre-loading: `execute_transaction()` now collects all unique account IDs (including both sides of TRANSFER operations) and calls `load_account()` for each before the operation loop begins; `unload_account()` is called on both commit and abort paths
+- Fixed `tx_id` routing: added `tx_id` parameter to `transfer()` in `bank.c` and propagated it from `execute_transaction()`; detection code subsequently removed entirely (prevention-only final strategy)
+- Fixed buffer pool pre-loading: `execute_transaction()` now collects all unique account IDs (including both sides of TRANSFER operations) and calls `load_account()` for each before the operation loop begins; `unload_account()` is called on both commit and abort paths; `get_balance()` documented to rely on this pre-load rather than calling load/unload itself
 - Fixed `buffer_pool.c` semaphore design: removed the `full_slots` semaphore and its mismatched producer-consumer pattern; replaced with a single `empty_slots` semaphore where `load_account` decrements (claims a slot) and `unload_account` increments (releases a slot)
 - Removed `sem_t full_slots` from `buffer_pool.h` struct to match the updated implementation
 - Removed unused `net_external_transfers` variable from `metrics.c` to eliminate compiler warning
-- Updated `trace_buffer.txt` to use TRANSFER operations so each transaction pre-loads two distinct account slots, driving 12 total slot demands against a pool of 5
-- Updated `trace_deadlock.txt` so both T1 and T2 start at tick 0 with opposing transfers, enabling the prevention strategy to demonstrate lock ordering for both directions
-- Updated `docs/design.md` with actual measured results from all five tests, replaced all predicted/future-tense content, and added a known limitations section covering Test 3b behavior, WaitTicks resolution, and conservation check scope
+- Removed deadlock detection code (wait-for graph, DFS, `transfer_detection`, `test3b`); `lock_mgr.h` and `utils.c` updated to prevention-only
+- Fixed two ThreadSanitizer data races: `all_transactions_done` and `timer_running` changed from `volatile` to `_Atomic` with `atomic_store`/`atomic_load`; `tsan` target now exits clean
+- Upgraded conservation check to economy-level: `metrics_check_conservation()` now models an external wallet and verifies `bank_total + external_wallet == initial_bank_total`, proving money is conserved across the full system rather than only within the bank's ledger
+- Updated `trace_buffer.txt` so each transaction pre-loads two distinct account slots, driving 12 total slot demands against a pool of 5
+- Updated `trace_deadlock.txt` so both T1 and T2 start at tick 0 with opposing transfers, demonstrating lock ordering for both directions
+- Updated `docs/design.md` with actual measured results from all five tests, replaced all predicted/future-tense content, added known limitations, and added §6 documenting the economy-level conservation design
 
 ---
 
@@ -178,4 +181,4 @@ See [`docs/design.md`](docs/design.md) for full rationale. Key choices:
 |------|--------|
 | Week 1 | Design documentation, initial repository structure and commits |
 | Week 2 | Full implementation: CLI parsing, timer, bank operations, buffer pool, lock manager (prevention + detection), transaction execution, metrics, Makefile |
-| Week 3 | Correctness fixes: tx_id routing, buffer pool pre-loading, semaphore redesign. Trace file updates for deadlock and saturation tests. Compiler warning fix. Removed deadlock detection code (wait-for graph, DFS, `transfer_detection`, `test3b`). Fixed two ThreadSanitizer data races: `all_transactions_done` and `timer_running` changed from `volatile` to `_Atomic` with `atomic_store`/`atomic_load`; `tsan` target now exits clean. design.md updated with actual measured results and known limitations. |
+| Week 3 | Correctness fixes: tx_id routing, buffer pool pre-loading, semaphore redesign. Removed deadlock detection (prevention-only final strategy). Fixed two TSan data races (`volatile` → `_Atomic`). Upgraded conservation check to economy-level wallet model. Trace file updates. Compiler warning fix. design.md updated with measured results, known limitations, and §6 conservation design. |
