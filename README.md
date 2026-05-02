@@ -57,7 +57,7 @@ Core concepts demonstrated:
 │   └── trace_buffer.txt     # Test 5: Buffer pool saturation
 │
 ├── docs/
-│   └── design.md        # Full design rationale and expected results
+│   └── design.md        # Full design rationale and measured results
 ├── Makefile
 └── README.md            # This file
 ```
@@ -133,7 +133,18 @@ Amounts are in **centavos** (100 centavos = PHP 1.00).
 - Implemented full thread lifecycle in `main.c` — spawns one pthread per transaction, joins all threads, starts and stops the timer thread
 - Added `Makefile` with `all`, `debug`, `clean`, `test`, and `tsan` targets
 
-### Week 3 _(fill in)_
+### Week 3
+
+- Fixed `tx_id` routing: added `tx_id` parameter to `transfer()` in `bank.c` and propagated it from `execute_transaction()` through to `transfer_detection()` in `lock_mgr.c`, replacing the previous hard-coded `-1`
+- Fixed buffer pool pre-loading: `execute_transaction()` now collects all unique account IDs (including both sides of TRANSFER operations) and calls `load_account()` for each before the operation loop begins; `unload_account()` is called on both commit and abort paths
+- Fixed `get_balance()` in `bank.c` to call `load_account()` and `unload_account()` so BALANCE operations go through the buffer pool consistently with all other account accesses
+- Fixed `buffer_pool.c` semaphore design: removed the `full_slots` semaphore and its mismatched producer-consumer pattern; replaced with a single `empty_slots` semaphore where `load_account` decrements (claims a slot) and `unload_account` increments (releases a slot)
+- Removed `sem_t full_slots` from `buffer_pool.h` struct to match the updated implementation
+- Added `pthread_barrier_t` in `transaction.c` to synchronize all transaction threads at startup, ensuring they compete for buffer slots simultaneously and producing observable pool saturation in Test 5
+- Removed unused `net_external_transfers` variable from `metrics.c` to eliminate compiler warning
+- Updated `trace_buffer.txt` to use TRANSFER operations so each transaction pre-loads two distinct account slots, driving 12 total slot demands against a pool of 5
+- Updated `trace_deadlock.txt` so both T1 and T2 start at tick 0 with opposing transfers, enabling the prevention strategy to demonstrate lock ordering for both directions
+- Updated `docs/design.md` with actual measured results from all five tests, replaced all predicted/future-tense content, and added a known limitations section covering Test 3b behavior, WaitTicks resolution, and conservation check scope
 
 ---
 
@@ -156,9 +167,9 @@ make tsan       # ThreadSanitizer runs
 
 See [`docs/design.md`](docs/design.md) for full rationale. Key choices:
 
-**Deadlock handling:** Both strategies are implemented and selectable via `--deadlock=`. Prevention uses lock ordering (always acquire the lower `account_id` lock first, breaking the circular wait Coffman condition). Detection maintains a wait-for graph and runs DFS cycle detection; resolution aborts the youngest waiting transaction to minimize wasted work.
+**Deadlock handling:** Both strategies are implemented and selectable via `--deadlock=`. Prevention uses lock ordering (always acquire the lower `account_id` lock first, breaking the circular wait Coffman condition). Detection maintains a wait-for graph and runs DFS cycle detection on every lock block; resolution aborts the youngest waiting transaction to minimize wasted work.
 
-**Buffer pool:** Bounded producer-consumer pool using `sem_t` (empty/full semaphores) and a `pthread_mutex_t` for the critical section. Accounts are loaded before each operation and unloaded immediately after, keeping pool pressure low.
+**Buffer pool:** Bounded pool using a single `sem_t` (`empty_slots`) and a `pthread_mutex_t` for the critical section. Each transaction pre-loads all required accounts before acquiring any locks, then unloads all on commit or abort. 
 
 **Locking:** Per-account `pthread_rwlock_t` allows concurrent reads (BALANCE operations) while serializing writes (DEPOSIT, WITHDRAW, TRANSFER). Significantly improves throughput on read-heavy workloads compared to plain mutexes.
 
@@ -172,4 +183,4 @@ See [`docs/design.md`](docs/design.md) for full rationale. Key choices:
 |------|--------|
 | Week 1 | Design documentation, initial repository structure and commits |
 | Week 2 | Full implementation: CLI parsing, timer, bank operations, buffer pool, lock manager (prevention + detection), transaction execution, metrics, Makefile |
-| Week 3 | _(fill in)_ |
+| Week 3 | Correctness fixes: tx_id routing, buffer pool pre-loading, get_balance pool integration, semaphore redesign, barrier-based thread synchronization. Trace file updates for deadlock and saturation tests. Compiler warning fix. design.md updated with actual measured results and known limitations. |
