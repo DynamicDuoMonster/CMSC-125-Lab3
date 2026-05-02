@@ -1,8 +1,19 @@
-# Test 5: Buffer Pool Saturation — 6 concurrent transactions, pool size is 5
-# T6 must block until a buffer slot is freed
+# Buffer pool saturation test
+# Pool size = 5 slots.
+# Each transaction pre-loads 2 unique accounts before executing = holds 2 slots.
+# 6 concurrent transactions * 2 slots = 12 slot demands against pool of 5.
+# This guarantees blocked_ops > 0 and peak_usage = 5.
+#
+# Format: TxID StartTick OPERATION AccountID Amount
+T1 0 DEPOSIT 0 1000
 T1 0 DEPOSIT 1 1000
 T2 0 DEPOSIT 2 1000
-T3 0 DEPOSIT 3 1000
-T4 0 DEPOSIT 4 1000
-T5 0 DEPOSIT 5 1000
-T6 0 DEPOSIT 6 1000
+T2 0 DEPOSIT 3 1000
+T3 0 DEPOSIT 4 1000
+T3 0 DEPOSIT 5 1000
+T4 0 DEPOSIT 6 1000
+T4 0 DEPOSIT 0 1000
+T5 0 DEPOSIT 1 1000
+T5 0 DEPOSIT 2 1000
+T6 0 DEPOSIT 3 1000
+T6 0 DEPOSIT 4 1000

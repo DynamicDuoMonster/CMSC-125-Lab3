@@ -28,9 +28,6 @@ bool transfer_prevention(int from_id, int to_id, int amount_centavos)
     int first_idx  = find_account_idx(first_id);
     int second_idx = find_account_idx(second_id);
 
-    load_account(&buffer_pool, from_id);
-    load_account(&buffer_pool, to_id);
-
     if (deadlock_strategy == DEADLOCK_PREVENTION) {
         printf("  [DEADLOCK PREVENTED] Lock ordering: acquiring account %d before account %d\n",
                first_id, second_id);
@@ -43,8 +40,6 @@ bool transfer_prevention(int from_id, int to_id, int amount_centavos)
     if (bank.accounts[from_idx].balance_centavos < amount_centavos) {
         pthread_rwlock_unlock(&bank.accounts[second_idx].lock);
         pthread_rwlock_unlock(&bank.accounts[first_idx].lock);
-        unload_account(&buffer_pool, from_id);
-        unload_account(&buffer_pool, to_id);
         return false;
     }
 
@@ -53,12 +48,8 @@ bool transfer_prevention(int from_id, int to_id, int amount_centavos)
 
     pthread_rwlock_unlock(&bank.accounts[second_idx].lock);
     pthread_rwlock_unlock(&bank.accounts[first_idx].lock);
-
-    unload_account(&buffer_pool, from_id);
-    unload_account(&buffer_pool, to_id);
     return true;
 }
-
 /* =========================================================
  * Strategy B: Deadlock Detection via Wait-For Graph
  * ========================================================= */
@@ -174,9 +165,6 @@ bool transfer_detection(int from_id, int to_id, int amount_centavos, int tx_id)
         return false;
     }
 
-    load_account(&buffer_pool, from_id);
-    load_account(&buffer_pool, to_id);
-
     /* Try to acquire from lock */
     if (pthread_rwlock_trywrlock(&bank.accounts[from_idx].lock) != 0) {
         /* Could not get lock — record wait and check for deadlock */
@@ -184,8 +172,6 @@ bool transfer_detection(int from_id, int to_id, int amount_centavos, int tx_id)
         if (detect_deadlock()) {
             resolve_deadlock();
             clear_wait(tx_id);
-            unload_account(&buffer_pool, from_id);
-            unload_account(&buffer_pool, to_id);
             return false;
         }
         /* Fall back to blocking acquire */
@@ -199,8 +185,6 @@ bool transfer_detection(int from_id, int to_id, int amount_centavos, int tx_id)
             resolve_deadlock();
             clear_wait(tx_id);
             pthread_rwlock_unlock(&bank.accounts[from_idx].lock);
-            unload_account(&buffer_pool, from_id);
-            unload_account(&buffer_pool, to_id);
             return false;
         }
         pthread_rwlock_wrlock(&bank.accounts[to_idx].lock);
@@ -210,8 +194,6 @@ bool transfer_detection(int from_id, int to_id, int amount_centavos, int tx_id)
     if (bank.accounts[from_idx].balance_centavos < amount_centavos) {
         pthread_rwlock_unlock(&bank.accounts[to_idx].lock);
         pthread_rwlock_unlock(&bank.accounts[from_idx].lock);
-        unload_account(&buffer_pool, from_id);
-        unload_account(&buffer_pool, to_id);
         return false;
     }
 
@@ -220,8 +202,5 @@ bool transfer_detection(int from_id, int to_id, int amount_centavos, int tx_id)
 
     pthread_rwlock_unlock(&bank.accounts[to_idx].lock);
     pthread_rwlock_unlock(&bank.accounts[from_idx].lock);
-
-    unload_account(&buffer_pool, from_id);
-    unload_account(&buffer_pool, to_id);
     return true;
 }

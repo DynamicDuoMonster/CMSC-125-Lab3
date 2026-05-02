@@ -96,6 +96,47 @@ void *execute_transaction(void *arg)
     if (verbose)
         printf("Tick %d: T%d started\n", tx->actual_start, tx->tx_id);
 
+    // Pre-load all accounts into buffer pool before acquiring locks
+    // Collect unique account IDs
+    int unique_accounts[MAX_OPS_PER_TX * 2]; // TRANSFER uses 2 accounts
+    int num_unique = 0;
+    
+    for (int i = 0; i < tx->num_ops; i++) {
+        Operation *op = &tx->ops[i];
+        bool found = false;
+        
+        // Check if account_id already in list
+        for (int j = 0; j < num_unique; j++) {
+            if (unique_accounts[j] == op->account_id) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            unique_accounts[num_unique++] = op->account_id;
+        }
+        
+        // TRANSFER also uses target_account
+        if (op->type == OP_TRANSFER) {
+            found = false;
+            for (int j = 0; j < num_unique; j++) {
+                if (unique_accounts[j] == op->target_account) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                unique_accounts[num_unique++] = op->target_account;
+            }
+        }
+    }
+    
+    // Load all unique accounts
+    for (int i = 0; i < num_unique; i++) {
+        load_account(&buffer_pool, unique_accounts[i]);
+    }
+
+    // Execute operations
     for (int i = 0; i < tx->num_ops; i++) {
         Operation *op = &tx->ops[i];
         int tick_before = global_tick;
@@ -122,6 +163,10 @@ void *execute_transaction(void *arg)
                        tx->tx_id, op->account_id);
                 tx->status    = TX_ABORTED;
                 tx->actual_end = global_tick;
+                // Unload all accounts on abort
+                for (int j = 0; j < num_unique; j++) {
+                    unload_account(&buffer_pool, unique_accounts[j]);
+                }
                 return NULL;
             }
             if (verbose)
@@ -133,11 +178,15 @@ void *execute_transaction(void *arg)
                 printf("  T%d: TRANSFER from %d to %d amount PHP %d.%02d\n",
                        tx->tx_id, op->account_id, op->target_account,
                        op->amount_centavos / 100, op->amount_centavos % 100);
-            if (!transfer(op->account_id, op->target_account, op->amount_centavos)) {
+            if (!transfer(op->account_id, op->target_account, op->amount_centavos, tx->tx_id - 1)) {
                 printf("  T%d: ABORTED — transfer failed (account %d → %d)\n",
                        tx->tx_id, op->account_id, op->target_account);
                 tx->status    = TX_ABORTED;
                 tx->actual_end = global_tick;
+                // Unload all accounts on abort
+                for (int j = 0; j < num_unique; j++) {
+                    unload_account(&buffer_pool, unique_accounts[j]);
+                }
                 return NULL;
             }
             if (verbose)
@@ -158,6 +207,11 @@ void *execute_transaction(void *arg)
 
     tx->actual_end = global_tick;
     tx->status     = TX_COMMITTED;
+
+    // Unload all accounts after successful completion
+    for (int i = 0; i < num_unique; i++) {
+        unload_account(&buffer_pool, unique_accounts[i]);
+    }
 
     if (verbose)
         printf("Tick %d: T%d committed\n", tx->actual_end, tx->tx_id);

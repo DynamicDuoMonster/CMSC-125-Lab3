@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include "buffer_pool.h"
 
 BufferPool buffer_pool;
@@ -8,8 +9,13 @@ void init_buffer_pool(BufferPool *pool)
 {
     memset(pool, 0, sizeof(*pool));
 
+    /*
+     * empty_slots counts available slots. Starts at BUFFER_POOL_SIZE.
+     * Each load_account claims one slot; each unload_account releases one.
+     * No separate full_slots semaphore — each transaction manages its own
+     * slots rather than acting as separate producer/consumer threads.
+     */
     sem_init(&pool->empty_slots, 0, BUFFER_POOL_SIZE);
-    sem_init(&pool->full_slots,  0, 0);
     pthread_mutex_init(&pool->pool_lock, NULL);
 
     for (int i = 0; i < BUFFER_POOL_SIZE; i++) {
@@ -20,30 +26,21 @@ void init_buffer_pool(BufferPool *pool)
 }
 
 /*
- * Producer: load account data into a buffer slot.
- * Blocks if all slots are full (demonstrates bounded-buffer problem).
+ * Claim a buffer slot for account_id.
+ * Blocks if pool is full — this is the bounded-buffer demonstration.
+ * Each call claims an independent slot so concurrent transactions compete
+ * for the limited pool space.
  */
 void load_account(BufferPool *pool, int account_id)
 {
-    /* Check if already loaded — avoid double-loading same account */
-    pthread_mutex_lock(&pool->pool_lock);
-    for (int i = 0; i < BUFFER_POOL_SIZE; i++) {
-        if (pool->slots[i].in_use && pool->slots[i].account_id == account_id) {
-            pthread_mutex_unlock(&pool->pool_lock);
-            return; /* already in buffer */
-        }
-    }
-    pthread_mutex_unlock(&pool->pool_lock);
-
-    /* Try non-blocking first; if pool is full, record the block and wait */
+    /* Try non-blocking first; record a block if the pool is full */
     if (sem_trywait(&pool->empty_slots) != 0) {
-        pool->blocked_ops++; /* had to wait — pool was full */
-        sem_wait(&pool->empty_slots);
+        __atomic_fetch_add(&pool->blocked_ops, 1, __ATOMIC_SEQ_CST);
+        sem_wait(&pool->empty_slots); /* blocks until a slot is freed */
     }
 
     pthread_mutex_lock(&pool->pool_lock);
 
-    /* Find an empty slot */
     for (int i = 0; i < BUFFER_POOL_SIZE; i++) {
         if (!pool->slots[i].in_use) {
             pool->slots[i].account_id = account_id;
@@ -58,16 +55,14 @@ void load_account(BufferPool *pool, int account_id)
     }
 
     pthread_mutex_unlock(&pool->pool_lock);
-    sem_post(&pool->full_slots);
 }
 
 /*
- * Consumer: release the buffer slot for an account.
+ * Release the slot held for account_id.
+ * Posts to empty_slots so a waiting thread can proceed.
  */
 void unload_account(BufferPool *pool, int account_id)
 {
-    sem_wait(&pool->full_slots);
-
     pthread_mutex_lock(&pool->pool_lock);
 
     for (int i = 0; i < BUFFER_POOL_SIZE; i++) {

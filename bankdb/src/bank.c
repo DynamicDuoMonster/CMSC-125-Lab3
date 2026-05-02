@@ -61,77 +61,42 @@ bool bank_load_accounts(const char *filename)
 int get_balance(int account_id)
 {
     int idx = find_account_idx(account_id);
-    if (idx < 0) {
-        fprintf(stderr, "get_balance: unknown account %d\n", account_id);
-        return -1;
-    }
+    if (idx < 0) { fprintf(stderr, "get_balance: unknown account %d\n", account_id); return -1; }
     Account *acc = &bank.accounts[idx];
-
     pthread_rwlock_rdlock(&acc->lock);
     int balance = acc->balance_centavos;
     pthread_rwlock_unlock(&acc->lock);
-
     return balance;
 }
 
 void deposit(int account_id, int amount_centavos)
 {
     int idx = find_account_idx(account_id);
-    if (idx < 0) {
-        fprintf(stderr, "deposit: unknown account %d\n", account_id);
-        return;
-    }
-    Account *acc = &bank.accounts[idx];
-
-    /* Load into buffer pool (producer side) */
-    load_account(&buffer_pool, account_id);
-
-    int tick_before = global_tick;
-    pthread_rwlock_wrlock(&acc->lock);
-    int wait = global_tick - tick_before;
-    (void)wait;
-
-    acc->balance_centavos += amount_centavos;
-
-    pthread_rwlock_unlock(&acc->lock);
-
-    /* Done — release buffer slot (consumer side) */
-    unload_account(&buffer_pool, account_id);
+    if (idx < 0) { fprintf(stderr, "deposit: unknown account %d\n", account_id); return; }
+    pthread_rwlock_wrlock(&bank.accounts[idx].lock);
+    bank.accounts[idx].balance_centavos += amount_centavos;
+    pthread_rwlock_unlock(&bank.accounts[idx].lock);
 }
 
 bool withdraw(int account_id, int amount_centavos)
 {
     int idx = find_account_idx(account_id);
-    if (idx < 0) {
-        fprintf(stderr, "withdraw: unknown account %d\n", account_id);
+    if (idx < 0) { fprintf(stderr, "withdraw: unknown account %d\n", account_id); return false; }
+    pthread_rwlock_wrlock(&bank.accounts[idx].lock);
+    if (bank.accounts[idx].balance_centavos < amount_centavos) {
+        pthread_rwlock_unlock(&bank.accounts[idx].lock);
         return false;
     }
-    Account *acc = &bank.accounts[idx];
-
-    load_account(&buffer_pool, account_id);
-
-    pthread_rwlock_wrlock(&acc->lock);
-
-    if (acc->balance_centavos < amount_centavos) {
-        pthread_rwlock_unlock(&acc->lock);
-        unload_account(&buffer_pool, account_id);
-        return false;
-    }
-
-    acc->balance_centavos -= amount_centavos;
-    pthread_rwlock_unlock(&acc->lock);
-
-    unload_account(&buffer_pool, account_id);
+    bank.accounts[idx].balance_centavos -= amount_centavos;
+    pthread_rwlock_unlock(&bank.accounts[idx].lock);
     return true;
 }
-
-bool transfer(int from_id, int to_id, int amount_centavos)
+bool transfer(int from_id, int to_id, int amount_centavos, int tx_id)
 {
     if (deadlock_strategy == DEADLOCK_PREVENTION) {
         return transfer_prevention(from_id, to_id, amount_centavos);
     } else {
-        /* tx_id not available here; use -1 (detection bookkeeping is best-effort) */
-        return transfer_detection(from_id, to_id, amount_centavos, -1);
+        return transfer_detection(from_id, to_id, amount_centavos, tx_id);
     }
 }
 
