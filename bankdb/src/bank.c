@@ -93,11 +93,8 @@ bool withdraw(int account_id, int amount_centavos)
 }
 bool transfer(int from_id, int to_id, int amount_centavos, int tx_id)
 {
-    if (deadlock_strategy == DEADLOCK_PREVENTION) {
-        return transfer_prevention(from_id, to_id, amount_centavos);
-    } else {
-        return transfer_detection(from_id, to_id, amount_centavos, tx_id);
-    }
+    (void)tx_id;  /* unused in prevention-only mode */
+    return transfer_prevention(from_id, to_id, amount_centavos);
 }
 
 int bank_total_balance(void)

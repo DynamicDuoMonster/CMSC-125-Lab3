@@ -30,12 +30,10 @@ int main(int argc, char **argv)
                &strategy, &tick_ms, &verbose);
 
     printf("=== Banking System Execution Log ===\n");
-    printf("Deadlock strategy : %s\n",
-           strategy == DEADLOCK_PREVENTION ? "prevention" : "detection");
+    printf("Deadlock strategy : prevention\n");
 
     /* Initialise subsystems */
     bank_init();
-    lock_mgr_init(strategy);
     init_buffer_pool(&buffer_pool);
     timer_init(tick_ms);
 

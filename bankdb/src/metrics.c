@@ -25,7 +25,6 @@ void metrics_check_conservation(int initial_total)
     int final_total = bank_total_balance();
     int committed_deposits  = 0;
     int committed_withdraws = 0;
-    int net_external_transfers = 0;
 
     for (int i = 0; i < num_transactions; i++) {
         Transaction *tx = &transactions[i];

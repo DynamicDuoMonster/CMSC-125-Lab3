@@ -36,11 +36,8 @@ void parse_args(int argc, char **argv,
     *trace_file    = get_opt_val(argc, argv, "trace");
     *verbose_out   = has_flag(argc, argv, "--verbose");
 
-    const char *dl = get_opt_val(argc, argv, "deadlock");
-    if (dl && strcmp(dl, "detection") == 0)
-        *strategy = DEADLOCK_DETECTION;
-    else
-        *strategy = DEADLOCK_PREVENTION;
+    /* Only prevention is implemented; detection code removed */
+    *strategy = DEADLOCK_PREVENTION;
 
     const char *tm = get_opt_val(argc, argv, "tick-ms");
     *tick_ms = tm ? atoi(tm) : 100;
@@ -48,7 +45,6 @@ void parse_args(int argc, char **argv,
     if (!*accounts_file || !*trace_file) {
         fprintf(stderr,
                 "Usage: bankdb --accounts=FILE --trace=FILE\n"
-                "              [--deadlock=prevention|detection]\n"
                 "              [--tick-ms=N] [--verbose]\n");
         exit(EXIT_FAILURE);
     }
