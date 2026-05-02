@@ -2,63 +2,30 @@
 
 ## 1. Deadlock Strategy Choice
 
-### Chosen Strategy: Both Prevention and Detection Implemented
+### Chosen Strategy: Prevention via Lock Ordering
 
-We implemented **both deadlock prevention via lock ordering and deadlock detection via a wait-for graph with DFS-based cycle detection**. The strategy is selectable at runtime via `--deadlock=prevention` or `--deadlock=detection`.
+We implemented **deadlock prevention via lock ordering**. Detection via a wait-for graph was prototyped but removed (see Known Limitations, §5).
 
-### Why These Strategies?
+### Why Prevention?
 
-**Prevention (lock ordering)** was chosen as the primary strategy because:
+**Prevention (lock ordering)** was chosen as the final strategy because:
 - It guarantees deadlocks never occur by breaking the circular-wait Coffman condition
 - It is simple, correct, and has no runtime overhead for cycle detection
 - It produced clean, deterministic results in all tests
 
-**Detection (wait-for graph)** was also implemented to demonstrate deeper understanding of dynamic deadlock conditions. It reflects how real-world database systems handle deadlocks reactively rather than conservatively.
+Detection was explored but removed because at 50ms tick resolution, each transfer completes before the opposing thread acquires its first lock, so no actual circular wait ever formed in our test scenarios. The detection infrastructure would require blocking lock acquisition with explicit wait recording — a more complex design whose correctness could not be demonstrated with our current trace files.
 
 ---
 
-### Wait-For Graph Design
+### Observed Behavior (Test 3: Deadlock Prevention)
 
-Each transaction is represented as a node in the wait-for graph.
-
-An edge `T_i → T_j` means transaction `T_i` is waiting for a resource (account lock) currently held by `T_j`.
-
-The graph is maintained using a shared `WaitForEntry` array where each entry records:
-- Which transaction it is waiting for (`waiting_for_tx`)
-- Which account it is blocked on (`waiting_for_account`)
-
-All updates to the graph are protected by `graph_lock` (a `pthread_mutex_t`).
-
----
-
-### Cycle Detection Algorithm
-
-**DFS-based cycle detection** is used, triggered each time a transaction blocks on a lock request.
-
-**Algorithm:**
-1. Maintain `visited[]` and `rec_stack[]` arrays
-2. For each active transaction, perform DFS traversal
-3. If a node is revisited while still in the recursion stack, a cycle exists and a deadlock is detected
-
----
-
-### Deadlock Resolution Policy
-
-When a deadlock is detected, the **youngest transaction** (highest `tx_id`) currently waiting is aborted.
-
-**Rationale:** Younger transactions have performed less work, minimizing wasted computation. This is consistent with wound-wait / wait-die strategies used in real systems.
-
----
-
-### Observed Behavior
-
-In Test 3a (prevention), both T1 and T2 committed successfully. Lock ordering fired for both transfers:
+Both T1 and T2 committed successfully. Lock ordering fired for both transfers:
 
 ```
 [DEADLOCK PREVENTED] Lock ordering: acquiring account 10 before account 20
 ```
 
-In Test 3b (detection), both T1 and T2 also committed without a detected deadlock. This is a known limitation: at 50ms tick resolution, each transfer completes before the opposing thread acquires its first lock, so no actual circular wait forms. The detection infrastructure (wait-for graph, DFS, `resolve_deadlock`) is correctly implemented and would fire under slower execution or finer-grained locking scenarios. This is documented as a known limitation.
+T1 (`TRANSFER 10 → 20`) and T2 (`TRANSFER 20 → 10`) both acquire account 10's lock before account 20's lock, regardless of transfer direction. This eliminates the possibility of circular waiting.
 
 ---
 
@@ -161,6 +128,19 @@ The timer thread maintains a **global logical clock (`global_tick`)** that contr
 
 ---
 
+### Shared Flag Synchronization (`_Atomic`)
+
+Two flags are shared between the timer thread and the main thread:
+
+- `timer_running` — written by `timer_stop()` (main thread), read by `timer_thread()`
+- `all_transactions_done` — written by `run_all_transactions()` (main thread), read by `timer_thread()`
+
+Both were originally declared `volatile`. `volatile` only prevents the compiler from caching a value in a register — it does not insert memory barriers, does not prevent CPU reordering, and is not recognized by the C11 memory model as a synchronization primitive. ThreadSanitizer correctly flagged both as data races because it builds a happens-before graph from explicit synchronization operations (`pthread_*`, `atomic_*`), and plain `volatile` stores/loads create no edges in that graph.
+
+Both flags are now declared `_Atomic` (`_Atomic int` and `_Atomic bool`). `atomic_store`/`atomic_load` are formally recognized synchronization points: a store *synchronizes-with* a subsequent load of the same object, establishing the happens-before edge TSan requires. The `tsan` build target now exits clean.
+
+---
+
 ### Why It Is Necessary
 
 Without a timer thread:
@@ -183,7 +163,7 @@ For tests requiring genuine concurrency (Test 5), the trace file is designed so 
 If the timer thread is removed:
 - `wait_until_tick()` would block forever on transactions with `start_tick > 0`
 - No controlled scheduling of transaction start times would be possible
-- Reproducible concurrency scenarios (e.g., Test 3a/3b) could not be constructed
+- Reproducible concurrency scenarios (e.g., Test 3) could not be constructed
 
 ---
 
@@ -191,7 +171,7 @@ If the timer thread is removed:
 
 | Issue | Description |
 |---|---|
-| Test 3b detection not triggered | At 50ms tick resolution, transfers complete before a real circular wait forms. Detection code is correct but the scenario resolves too quickly to deadlock. |
+| Deadlock detection removed | Detection was prototyped but removed. At 50ms tick resolution, opposing transfers complete before any circular wait forms. A correct implementation would require blocking `pthread_rwlock_wrlock` calls with explicit wait-graph recording, which was outside the scope of the final submission. |
 | WaitTicks always 0 | All operations complete within a single tick. `blocked_ops` in the buffer pool report is the meaningful contention metric. |
 | Conservation check is ledger-level only | `metrics_check_conservation()` verifies `final = initial + deposits − withdrawals` within the bank. Full system-level conservation (bank + external wallets = constant) is not implemented as per-user wallet tracking is outside the scope of this lab. |
-| Test 3b requires true lock contention | Detection would fire correctly if `transfer_detection()` used blocking lock acquisition with explicit wait recording rather than `trywrlock`. Under the current implementation, `trywrlock` succeeds immediately since the opposing transaction has already released by the time the second thread runs. |
+| Writer starvation under rwlock | Under sustained read load, new readers can starve waiting writers. Acceptable for our workloads but a known property of the reader-writer lock model. |
