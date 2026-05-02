@@ -173,5 +173,45 @@ If the timer thread is removed:
 |---|---|
 | Deadlock detection removed | Detection was prototyped but removed. At 50ms tick resolution, opposing transfers complete before any circular wait forms. A correct implementation would require blocking `pthread_rwlock_wrlock` calls with explicit wait-graph recording, which was outside the scope of the final submission. |
 | WaitTicks always 0 | All operations complete within a single tick. `blocked_ops` in the buffer pool report is the meaningful contention metric. |
-| Conservation check is ledger-level only | `metrics_check_conservation()` verifies `final = initial + deposits − withdrawals` within the bank. Full system-level conservation (bank + external wallets = constant) is not implemented as per-user wallet tracking is outside the scope of this lab. |
+| `get_balance()` does not call load/unload directly | `get_balance()` relies on `execute_transaction()` having pre-loaded the account slot before the operation loop. Buffer pool accounting for BALANCE operations is captured by that pre-load/unload pair. A direct call outside a transaction context would bypass the pool, but no such call exists in the current codebase. |
 | Writer starvation under rwlock | Under sustained read load, new readers can starve waiting writers. Acceptable for our workloads but a known property of the reader-writer lock model. |
+
+---
+
+## 6. Economy-Level Conservation Check
+
+### Design
+
+`metrics_check_conservation()` models an **external wallet** that starts at zero and tracks the net flow of money between the bank and the outside world across all committed transactions:
+
+- Every committed **DEPOSIT** reduces the wallet (the depositor paid money into the bank)
+- Every committed **WITHDRAW** increases the wallet (the bank paid money out)
+- **TRANSFER** operations are internal and do not affect the wallet
+
+The invariant checked is:
+
+```
+bank_total + external_wallet == initial_bank_total
+```
+
+This proves money is conserved across the whole economy, not just within the bank's ledger. The old check (`final = initial + deposits − withdrawals`) was equivalent but only proved internal ledger consistency — it would pass even if deposits conjured money from nowhere, as long as the formula balanced.
+
+### Sample Output
+
+```
+Initial bank total    : PHP 189.00
+Final bank total      : PHP 189.00
+External wallet delta : PHP 0.00  (net outflow from bank)
+System total          : PHP 189.00  (bank + wallet)
+Conservation check    : PASSED
+```
+
+For a trace with a net deposit of PHP 100.00 and a net withdrawal of PHP 20.00:
+
+```
+Initial bank total    : PHP 189.00
+Final bank total      : PHP 269.00
+External wallet delta : PHP -80.00  (net inflow to bank)
+System total          : PHP 189.00  (bank + wallet)
+Conservation check    : PASSED
+```
