@@ -38,14 +38,14 @@ Core concepts demonstrated:
 │   └── transaction.h    # Transaction, Operation, TxStatus types
 │
 ├── src/
-│   ├── bank.c           # Account initialization, balance operations, transfer dispatch
+│   ├── bank.c           # Account initialization, balance operations, 
 │   ├── buffer_pool.c    # Semaphore-based pool: load/unload account
-│   ├── lock_mgr.c       # Lock ordering and deadlock detection via wait-for graph
+│   ├── lock_mgr.c       # Lock ordering and deadlock detection via 
 │   ├── metrics.c        # Metrics recording and printing
-│   ├── timer.c          # Timer thread: increments global_tick each tick
+│   ├── timer.c          # Timer thread: increments global_tick each 
 │   ├── transaction.c    # execute_transaction, thread execution logic
 │   ├── utils.c          # CLI argument parser
-│   └── main.c           # Entry point: load accounts and trace, spawn threads, print results
+│   └── main.c           # Entry point: load accounts and trace, spawn 
 │
 ├── tests/
 │   ├── accounts.txt         # Initial account balances (general)
@@ -137,10 +137,8 @@ Amounts are in **centavos** (100 centavos = PHP 1.00).
 
 - Fixed `tx_id` routing: added `tx_id` parameter to `transfer()` in `bank.c` and propagated it from `execute_transaction()` through to `transfer_detection()` in `lock_mgr.c`, replacing the previous hard-coded `-1`
 - Fixed buffer pool pre-loading: `execute_transaction()` now collects all unique account IDs (including both sides of TRANSFER operations) and calls `load_account()` for each before the operation loop begins; `unload_account()` is called on both commit and abort paths
-- Fixed `get_balance()` in `bank.c` to call `load_account()` and `unload_account()` so BALANCE operations go through the buffer pool consistently with all other account accesses
 - Fixed `buffer_pool.c` semaphore design: removed the `full_slots` semaphore and its mismatched producer-consumer pattern; replaced with a single `empty_slots` semaphore where `load_account` decrements (claims a slot) and `unload_account` increments (releases a slot)
 - Removed `sem_t full_slots` from `buffer_pool.h` struct to match the updated implementation
-- Added `pthread_barrier_t` in `transaction.c` to synchronize all transaction threads at startup, ensuring they compete for buffer slots simultaneously and producing observable pool saturation in Test 5
 - Removed unused `net_external_transfers` variable from `metrics.c` to eliminate compiler warning
 - Updated `trace_buffer.txt` to use TRANSFER operations so each transaction pre-loads two distinct account slots, driving 12 total slot demands against a pool of 5
 - Updated `trace_deadlock.txt` so both T1 and T2 start at tick 0 with opposing transfers, enabling the prevention strategy to demonstrate lock ordering for both directions
@@ -183,4 +181,4 @@ See [`docs/design.md`](docs/design.md) for full rationale. Key choices:
 |------|--------|
 | Week 1 | Design documentation, initial repository structure and commits |
 | Week 2 | Full implementation: CLI parsing, timer, bank operations, buffer pool, lock manager (prevention + detection), transaction execution, metrics, Makefile |
-| Week 3 | Correctness fixes: tx_id routing, buffer pool pre-loading, get_balance pool integration, semaphore redesign, barrier-based thread synchronization. Trace file updates for deadlock and saturation tests. Compiler warning fix. design.md updated with actual measured results and known limitations. |
+| Week 3 | Correctness fixes: tx_id routing, buffer pool pre-loading, semaphore redesign. Trace file updates for deadlock and saturation tests. Compiler warning fix. design.md updated with actual measured results and known limitations. |
