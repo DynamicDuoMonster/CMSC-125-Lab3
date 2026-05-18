@@ -4,7 +4,7 @@
 #include "timer.h"
 #include "transaction.h"
 
-volatile int    global_tick     = 0;
+_Atomic int     global_tick     = 0;
 pthread_mutex_t tick_lock       = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  tick_changed    = PTHREAD_COND_INITIALIZER;
 int             tick_interval_ms = 100;
@@ -14,8 +14,8 @@ static _Atomic int timer_running = 0;
 void timer_init(int interval_ms)
 {
     tick_interval_ms = interval_ms;
-    global_tick      = 0;
-    timer_running    = 1;
+    atomic_store(&global_tick, 0);
+    atomic_store(&timer_running, 1);
     printf("Timer thread started (tick interval: %d ms)\n\n", interval_ms);
 }
 
@@ -26,7 +26,7 @@ void *timer_thread(void *arg)
         usleep((unsigned int)tick_interval_ms * 1000);
 
         pthread_mutex_lock(&tick_lock);
-        global_tick++;
+        atomic_fetch_add(&global_tick, 1);
         pthread_cond_broadcast(&tick_changed);
         pthread_mutex_unlock(&tick_lock);
     }

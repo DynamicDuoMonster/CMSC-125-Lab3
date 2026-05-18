@@ -18,7 +18,7 @@ void metrics_print_summary(void)
     printf("Total transactions    : %d\n", committed + aborted);
     printf("Committed             : %d\n", committed);
     printf("Aborted               : %d\n", aborted);
-    printf("Total ticks           : %d\n", global_tick);
+    printf("Total ticks           : %d\n", atomic_load(&global_tick));
 }
 
 void metrics_check_conservation(int initial_total)

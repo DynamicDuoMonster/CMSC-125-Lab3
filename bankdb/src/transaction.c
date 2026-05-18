@@ -90,7 +90,7 @@ void *execute_transaction(void *arg)
     Transaction *tx = (Transaction *)arg;
 
     wait_until_tick(tx->start_tick);
-    tx->actual_start = global_tick;
+    tx->actual_start = atomic_load(&global_tick);
     tx->status       = TX_RUNNING;
 
     if (verbose)
@@ -139,7 +139,7 @@ void *execute_transaction(void *arg)
     // Execute operations
     for (int i = 0; i < tx->num_ops; i++) {
         Operation *op = &tx->ops[i];
-        int tick_before = global_tick;
+        int tick_before = atomic_load(&global_tick);
 
         switch (op->type) {
 
@@ -162,7 +162,7 @@ void *execute_transaction(void *arg)
                 printf("  T%d: ABORTED — insufficient funds (account %d)\n",
                        tx->tx_id, op->account_id);
                 tx->status    = TX_ABORTED;
-                tx->actual_end = global_tick;
+                tx->actual_end = atomic_load(&global_tick);
                 // Unload all accounts on abort
                 for (int j = 0; j < num_unique; j++) {
                     unload_account(&buffer_pool, unique_accounts[j]);
@@ -182,7 +182,7 @@ void *execute_transaction(void *arg)
                 printf("  T%d: ABORTED — transfer failed (account %d → %d)\n",
                        tx->tx_id, op->account_id, op->target_account);
                 tx->status    = TX_ABORTED;
-                tx->actual_end = global_tick;
+                tx->actual_end = atomic_load(&global_tick);
                 // Unload all accounts on abort
                 for (int j = 0; j < num_unique; j++) {
                     unload_account(&buffer_pool, unique_accounts[j]);
@@ -202,10 +202,10 @@ void *execute_transaction(void *arg)
         }
         } /* switch */
 
-        tx->wait_ticks += (global_tick - tick_before);
+        tx->wait_ticks += (atomic_load(&global_tick) - tick_before);
     }
 
-    tx->actual_end = global_tick;
+    tx->actual_end = atomic_load(&global_tick);
     tx->status     = TX_COMMITTED;
 
     // Unload all accounts after successful completion
@@ -268,7 +268,7 @@ void print_transaction_metrics(void)
         total_wait += tx->wait_ticks;
     }
 
-    int total_ticks = global_tick;
+    int total_ticks = atomic_load(&global_tick);
     int total_tx    = committed + aborted;
 
     printf("\nAverage wait time : %.2f ticks\n",
