@@ -36,8 +36,19 @@ void parse_args(int argc, char **argv,
     *trace_file    = get_opt_val(argc, argv, "trace");
     *verbose_out   = has_flag(argc, argv, "--verbose");
 
-    /* Only prevention is implemented; detection code removed */
-    *strategy = DEADLOCK_PREVENTION;
+    const char *ds = get_opt_val(argc, argv, "deadlock");
+    if (!ds || strcmp(ds, "prevention") == 0) {
+        *strategy = DEADLOCK_PREVENTION;
+    } else if (strcmp(ds, "detection") == 0) {
+        fprintf(stderr, "Error: --deadlock=detection is no longer supported; "
+                        "deadlock detection code has been removed.\n"
+                        "Use --deadlock=prevention (or omit the flag).\n");
+        exit(EXIT_FAILURE);
+    } else {
+        fprintf(stderr, "Error: unknown deadlock strategy '%s'. "
+                        "Supported: prevention\n", ds);
+        exit(EXIT_FAILURE);
+    }
 
     const char *tm = get_opt_val(argc, argv, "tick-ms");
     *tick_ms = tm ? atoi(tm) : 100;
