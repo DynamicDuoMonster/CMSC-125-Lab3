@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "transaction.h"
 #include "bank.h"
 #include "timer.h"
@@ -64,6 +65,9 @@ bool load_transactions(const char *filename)
                    &op.target_account, &op.amount_centavos);
         } else if (strcmp(op_str, "BALANCE") == 0) {
             op.type = OP_BALANCE;
+        } else if (strcmp(op_str, "WAIT") == 0) {
+            op.type = OP_WAIT;
+            sscanf(line, "%*s %*d %*s %d", &op.amount_centavos);
         } else {
             continue;
         }
@@ -103,6 +107,11 @@ void *execute_transaction(void *arg)
     
     for (int i = 0; i < tx->num_ops; i++) {
         Operation *op = &tx->ops[i];
+        
+        // WAIT ops don't access any account
+        if (op->type == OP_WAIT)
+            continue;
+
         bool found = false;
         
         // Check if account_id already in list
@@ -200,6 +209,11 @@ void *execute_transaction(void *arg)
                    balance / 100, balance % 100);
             break;
         }
+
+        case OP_WAIT:
+            usleep((useconds_t)op->amount_centavos * 1000);
+            break;
+
         } /* switch */
 
         tx->wait_ticks += (atomic_load(&global_tick) - tick_before);

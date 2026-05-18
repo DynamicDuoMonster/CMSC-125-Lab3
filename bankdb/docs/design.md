@@ -64,17 +64,17 @@ A subtle deadlock class can arise independently of lock contention: if T1 holds 
 
 ### Measured Results (Test 5: Buffer Pool Saturation)
 
-Trace: 6 concurrent transactions each performing 2 DEPOSIT operations on distinct accounts (12 total slot demands, pool size 5).
+Trace: 6 concurrent transactions, each performing DEPOSIT + 3×BALANCE + WAIT 10ms + DEPOSIT on 2 distinct accounts (12 total slot demands, pool size 5). The `WAIT 10` op (`usleep(10000)`) keeps each transaction's pool slots held for 10ms, creating a reliable contention window.
 
 | Metric             | Value |
 |--------------------|-------|
 | Pool size          | 5 slots |
 | Total loads        | 12 |
 | Total unloads      | 12 |
-| Peak usage         | 5 slots |
-| Blocked operations | 5 |
+| Peak usage         | 4–5 slots |
+| Blocked operations | 50–150 |
 
-The pool reached full capacity and 5 load operations blocked, demonstrating correct bounded-buffer behavior under contention.
+Without the WAIT op, transactions complete within microseconds and the scheduler serializes them, yielding `Peak usage: 2, Blocked: 0` on modern hardware. The WAIT op makes contention reproducible regardless of OS scheduling.
 
 ---
 
@@ -154,7 +154,7 @@ Without a timer thread:
 
 In all five tests, the timer thread started correctly and incremented `global_tick` at 50ms intervals. All transactions in the test suite complete within tick 0 at this interval. This confirms the timer is functioning but also explains why `WaitTicks` is uniformly 0 — operations are fast relative to the tick interval.
 
-For tests requiring genuine concurrency (Test 5), the trace file is designed so each transaction pre-loads two distinct account slots, driving 12 total slot demands against a pool of 5 with 6 concurrent threads.
+For tests requiring genuine concurrency (Test 5), the trace file uses a `WAIT 10` op (`usleep(10000)`) between each transaction's operations to keep pool slots held for 10ms, ensuring all 6 threads contend for the pool's 5 slots.
 
 ---
 
