@@ -131,9 +131,9 @@ void *execute_transaction(void *arg)
         }
     }
     
-    // Load all unique accounts
-    for (int i = 0; i < num_unique; i++) {
-        load_account(&buffer_pool, unique_accounts[i]);
+    // Load all unique accounts atomically
+    if (num_unique > 0) {
+        load_all_accounts(&buffer_pool, unique_accounts, num_unique);
     }
 
     // Execute operations

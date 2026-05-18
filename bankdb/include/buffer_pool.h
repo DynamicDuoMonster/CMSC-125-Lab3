@@ -31,6 +31,7 @@ extern BufferPool buffer_pool;
 
 void init_buffer_pool(BufferPool *pool);
 void load_account(BufferPool *pool, int account_id);
+void load_all_accounts(BufferPool *pool, int *account_ids, int num_accounts);
 void unload_account(BufferPool *pool, int account_id);
 void print_buffer_pool_stats(BufferPool *pool);
 
