@@ -58,6 +58,50 @@ void load_account(BufferPool *pool, int account_id)
 }
 
 /*
+ * Atomically claim buffer pool slots for all required accounts.
+ * Either gets ALL slots or releases any partial claims and retries.
+ * Prevents deadlock caused by threads holding partial allocations
+ * when total slot demand exceeds BUFFER_POOL_SIZE.
+ */
+void load_all_accounts(BufferPool *pool, int *account_ids, int num_accounts)
+{
+    while (1) {
+        int claimed = 0;
+        for (int i = 0; i < num_accounts; i++) {
+            if (sem_trywait(&pool->empty_slots) != 0)
+                break;
+            claimed++;
+        }
+
+        if (claimed == num_accounts) {
+            pthread_mutex_lock(&pool->pool_lock);
+            for (int a = 0; a < num_accounts; a++) {
+                for (int i = 0; i < BUFFER_POOL_SIZE; i++) {
+                    if (!pool->slots[i].in_use) {
+                        pool->slots[i].account_id = account_ids[a];
+                        pool->slots[i].data       = &bank.accounts[find_account_idx(account_ids[a])];
+                        pool->slots[i].in_use     = true;
+                        pool->total_loads++;
+                        pool->current_usage++;
+                        if (pool->current_usage > pool->peak_usage)
+                            pool->peak_usage = pool->current_usage;
+                        break;
+                    }
+                }
+            }
+            pthread_mutex_unlock(&pool->pool_lock);
+            return;
+        }
+
+        for (int i = 0; i < claimed; i++)
+            sem_post(&pool->empty_slots);
+
+        __atomic_fetch_add(&pool->blocked_ops, 1, __ATOMIC_SEQ_CST);
+        usleep(1000);
+    }
+}
+
+/*
  * Release the slot held for account_id.
  * Posts to empty_slots so a waiting thread can proceed.
  */

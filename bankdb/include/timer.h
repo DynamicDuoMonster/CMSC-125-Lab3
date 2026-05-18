@@ -2,8 +2,9 @@
 #define TIMER_H
 
 #include <pthread.h>
+#include <stdatomic.h>
 
-extern volatile int global_tick;
+extern _Atomic int global_tick;
 extern pthread_mutex_t tick_lock;
 extern pthread_cond_t  tick_changed;
 extern int tick_interval_ms;

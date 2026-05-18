@@ -13,6 +13,7 @@ typedef enum {
     OP_WITHDRAW,
     OP_TRANSFER,
     OP_BALANCE,
+    OP_WAIT,
 } OpType;
 
 typedef struct {

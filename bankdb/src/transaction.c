@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "transaction.h"
 #include "bank.h"
 #include "timer.h"
@@ -64,6 +65,9 @@ bool load_transactions(const char *filename)
                    &op.target_account, &op.amount_centavos);
         } else if (strcmp(op_str, "BALANCE") == 0) {
             op.type = OP_BALANCE;
+        } else if (strcmp(op_str, "WAIT") == 0) {
+            op.type = OP_WAIT;
+            sscanf(line, "%*s %*d %*s %d", &op.amount_centavos);
         } else {
             continue;
         }
@@ -90,7 +94,7 @@ void *execute_transaction(void *arg)
     Transaction *tx = (Transaction *)arg;
 
     wait_until_tick(tx->start_tick);
-    tx->actual_start = global_tick;
+    tx->actual_start = atomic_load(&global_tick);
     tx->status       = TX_RUNNING;
 
     if (verbose)
@@ -103,6 +107,11 @@ void *execute_transaction(void *arg)
     
     for (int i = 0; i < tx->num_ops; i++) {
         Operation *op = &tx->ops[i];
+        
+        // WAIT ops don't access any account
+        if (op->type == OP_WAIT)
+            continue;
+
         bool found = false;
         
         // Check if account_id already in list
@@ -131,15 +140,15 @@ void *execute_transaction(void *arg)
         }
     }
     
-    // Load all unique accounts
-    for (int i = 0; i < num_unique; i++) {
-        load_account(&buffer_pool, unique_accounts[i]);
+    // Load all unique accounts atomically
+    if (num_unique > 0) {
+        load_all_accounts(&buffer_pool, unique_accounts, num_unique);
     }
 
     // Execute operations
     for (int i = 0; i < tx->num_ops; i++) {
         Operation *op = &tx->ops[i];
-        int tick_before = global_tick;
+        int tick_before = atomic_load(&global_tick);
 
         switch (op->type) {
 
@@ -162,7 +171,7 @@ void *execute_transaction(void *arg)
                 printf("  T%d: ABORTED — insufficient funds (account %d)\n",
                        tx->tx_id, op->account_id);
                 tx->status    = TX_ABORTED;
-                tx->actual_end = global_tick;
+                tx->actual_end = atomic_load(&global_tick);
                 // Unload all accounts on abort
                 for (int j = 0; j < num_unique; j++) {
                     unload_account(&buffer_pool, unique_accounts[j]);
@@ -182,7 +191,7 @@ void *execute_transaction(void *arg)
                 printf("  T%d: ABORTED — transfer failed (account %d → %d)\n",
                        tx->tx_id, op->account_id, op->target_account);
                 tx->status    = TX_ABORTED;
-                tx->actual_end = global_tick;
+                tx->actual_end = atomic_load(&global_tick);
                 // Unload all accounts on abort
                 for (int j = 0; j < num_unique; j++) {
                     unload_account(&buffer_pool, unique_accounts[j]);
@@ -200,12 +209,17 @@ void *execute_transaction(void *arg)
                    balance / 100, balance % 100);
             break;
         }
+
+        case OP_WAIT:
+            usleep((useconds_t)op->amount_centavos * 1000);
+            break;
+
         } /* switch */
 
-        tx->wait_ticks += (global_tick - tick_before);
+        tx->wait_ticks += (atomic_load(&global_tick) - tick_before);
     }
 
-    tx->actual_end = global_tick;
+    tx->actual_end = atomic_load(&global_tick);
     tx->status     = TX_COMMITTED;
 
     // Unload all accounts after successful completion
@@ -268,7 +282,7 @@ void print_transaction_metrics(void)
         total_wait += tx->wait_ticks;
     }
 
-    int total_ticks = global_tick;
+    int total_ticks = atomic_load(&global_tick);
     int total_tx    = committed + aborted;
 
     printf("\nAverage wait time : %.2f ticks\n",
